@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NIST 800-53 Rev 5 Control Translator</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>NIST 800-53 Rev 5 Control Translator</h1>
+    <p class="tagline">Plain-language, technology-specific implementation guidance for sysadmins, network admins, and ISSOs.</p>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <input id="search" type="search" placeholder="Search controls (e.g. &quot;remote access&quot;, AC-17)" />
+      <label class="checkbox-row">
+        <input id="toggle-enhancements" type="checkbox" checked />
+        Include control enhancements
+      </label>
+      <h2>Families</h2>
+      <ul id="family-list" class="family-list"></ul>
+    </aside>
+
+    <main class="content">
+      <section id="control-list-section">
+        <div class="list-header">
+          <h2 id="list-title">All Controls</h2>
+          <span id="list-count" class="count-badge"></span>
+        </div>
+        <ul id="control-list" class="control-list"></ul>
+      </section>
+
+      <section id="detail-section" class="detail hidden">
+        <button id="back-btn" class="link-btn">&larr; Back to list</button>
+        <h2 id="detail-title"></h2>
+        <p id="detail-withdrawn" class="withdrawn-note hidden"></p>
+
+        <div class="detail-block">
+          <h3>Official Statement</h3>
+          <pre id="detail-statement" class="statement"></pre>
+        </div>
+        <div class="detail-block">
+          <h3>Discussion / Guidance</h3>
+          <p id="detail-guidance" class="guidance"></p>
+        </div>
+
+        <div class="tailor-panel">
+          <h3>Tailor implementation guidance for your environment</h3>
+
+          <div class="tailor-row">
+            <div class="audience-select" id="audience-select"></div>
+          </div>
+
+          <div class="tailor-row">
+            <div id="tech-select" class="tech-select"></div>
+          </div>
+
+          <button id="tailor-btn" class="primary-btn">Generate implementation guidance</button>
+
+          <div id="tailor-results" class="tailor-results"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
