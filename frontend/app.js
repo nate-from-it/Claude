@@ -2,8 +2,8 @@ const API_BASE = window.NIST_API_BASE || "http://localhost:5057";
 
 const state = {
   families: [],
-  technologies: [],
   audiences: [],
+  technologies: [], // scoped to the current audience
   activeFamily: null,
   query: "",
   includeEnhancements: true,
@@ -24,18 +24,12 @@ async function api(path, options) {
 }
 
 async function init() {
-  const [families, technologies, audiences] = await Promise.all([
-    api("/api/families"),
-    api("/api/technologies"),
-    api("/api/audiences"),
-  ]);
+  const [families, audiences] = await Promise.all([api("/api/families"), api("/api/audiences")]);
   state.families = families;
-  state.technologies = technologies;
   state.audiences = audiences;
 
   renderFamilyList();
   renderAudienceSelect();
-  renderTechSelect();
   await refreshControlList();
 
   el("search").addEventListener("input", debounce((e) => {
@@ -101,8 +95,11 @@ function renderAudienceSelect() {
     btn.textContent = a.name;
     btn.className = state.selectedAudience === a.id ? "active" : "";
     btn.addEventListener("click", () => {
+      if (state.selectedAudience === a.id) return;
       state.selectedAudience = a.id;
+      state.selectedTechnologies = new Set();
       renderAudienceSelect();
+      refreshRoleView();
     });
     container.appendChild(btn);
   }
@@ -116,15 +113,39 @@ function renderTechSelect() {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.value = t.id;
+    checkbox.checked = state.selectedTechnologies.has(t.id);
     checkbox.addEventListener("change", () => {
       if (checkbox.checked) state.selectedTechnologies.add(t.id);
       else state.selectedTechnologies.delete(t.id);
       label.className = checkbox.checked ? "checked" : "";
     });
+    label.className = checkbox.checked ? "checked" : "";
     label.appendChild(checkbox);
     label.appendChild(document.createTextNode(t.name));
     container.appendChild(label);
   }
+}
+
+// Loads the role narrative + the technology list scoped to the current
+// audience for the currently open control. ISSO sees every technology;
+// Sysadmin/Net Admin each see only the technologies relevant to their role.
+async function refreshRoleView() {
+  const narrativeEl = el("role-narrative");
+  narrativeEl.textContent = "Loading...";
+
+  const [technologies, tailorData] = await Promise.all([
+    api(`/api/technologies?audience=${state.selectedAudience}`),
+    api(`/api/controls/${state.selectedControlId}/tailor`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ technologies: [], audience: state.selectedAudience }),
+    }),
+  ]);
+
+  state.technologies = technologies;
+  narrativeEl.textContent = tailorData.intro;
+  renderTechSelect();
+  el("tailor-results").innerHTML = "";
 }
 
 async function refreshControlList() {
@@ -200,8 +221,7 @@ async function showDetail(controlId) {
   el("detail-statement").textContent = control.statement || "(no statement — see incorporated control)";
   el("detail-guidance").textContent = control.guidance || "(no additional discussion)";
 
-  renderTechSelect();
-  el("tailor-results").innerHTML = "";
+  await refreshRoleView();
 }
 
 function showListView() {
@@ -231,11 +251,6 @@ async function runTailor() {
     });
 
     resultsEl.innerHTML = "";
-    const intro = document.createElement("div");
-    intro.className = "tailor-intro";
-    intro.textContent = `${data.audience_name}: ${data.intro}`;
-    resultsEl.appendChild(intro);
-
     for (const item of data.items) {
       const card = document.createElement("div");
       card.className = "tech-result";

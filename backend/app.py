@@ -9,7 +9,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-from tailoring import AUDIENCES, TECHNOLOGIES, tailor_control
+from tailoring import AUDIENCES, TECHNOLOGIES, tailor_control, technologies_for_audience
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "families")
 
@@ -91,8 +91,8 @@ def tailor(control_id, body):
     technologies = body.get("technologies") or []
     audience = body.get("audience") or "sysadmin"
 
-    if not isinstance(technologies, list) or not technologies:
-        return 400, {"error": "technologies must be a non-empty list"}
+    if not isinstance(technologies, list):
+        return 400, {"error": "technologies must be a list (may be empty for narrative-only)"}
     if audience not in AUDIENCES:
         return 400, {"error": f"audience must be one of {list(AUDIENCES)}"}
 
@@ -132,7 +132,9 @@ class Handler(BaseHTTPRequestHandler):
             counts = family_counts()
             self._send(200, [{**f, "control_count": counts.get(f["id"], 0)} for f in FAMILIES])
         elif path == "/api/technologies":
-            self._send(200, [{"id": k, "name": v} for k, v in TECHNOLOGIES.items()])
+            audience = (params.get("audience", [""])[0] or "").strip()
+            keys = technologies_for_audience(audience) if audience in AUDIENCES else list(TECHNOLOGIES)
+            self._send(200, [{"id": k, "name": TECHNOLOGIES[k]} for k in keys])
         elif path == "/api/audiences":
             self._send(200, [{"id": k, "name": v} for k, v in AUDIENCES.items()])
         elif path == "/api/controls":
