@@ -8,9 +8,13 @@ Two crosswalk strategies, depending on what the source repo tags rules with:
 
   "direct" - the STIG source repo tags each rule with its NIST 800-53
              control directly (RHEL, Windows). Used as-is.
-  "cci"    - the STIG source repo only tags CCI numbers (Cisco IOS L2S,
-             Kubernetes). Each CCI is looked up in the Vulcan crosswalk
+  "cci"    - the STIG source repo only tags CCI numbers (Cisco IOS L2S and
+             RTR, Kubernetes). Each CCI is looked up in the Vulcan crosswalk
              table to find its NIST 800-53 Rev 4 control.
+
+A technology can be backed by more than one source repo (e.g. "network" is
+Cisco switches + Cisco routers) - their parsed rules are merged into one
+output file, and their titles/URLs are kept as a list in _meta.json.
 
 Either way the resulting NIST control IDs are Rev 4 IDs. Base control
 numbers (e.g. AC-17, CM-6) are almost always unchanged between Rev 4 and
@@ -21,6 +25,10 @@ Sources (not vendored here; clone fresh to regenerate):
   https://github.com/ansible-lockdown/RHEL9-STIG           (linux)
   https://github.com/ansible-lockdown/Windows-2022-STIG    (windows)
   https://github.com/ansible-lockdown/CISCO-IOS-L2S-STIG   (network - switches)
+  https://github.com/ansible-lockdown/CISCO-IOS-RTR-STIG   (network - routers;
+                                        real rule content only exists on the
+                                        `devel` branch - `main` is an empty
+                                        stub, so clone with `--branch devel`)
   https://github.com/ansible-lockdown/KUBERNETES-STIG      (kubernetes)
   https://github.com/mitre/vulcan  ->  app/lib/cci_map/constants.rb
                                         (CCI -> NIST 800-53 Rev 4 table)
@@ -28,9 +36,10 @@ Sources (not vendored here; clone fresh to regenerate):
 Usage:
     python3 build_stigs.py <clone_root> <vulcan_clone_dir> <out_dir>
 
-Where <clone_root> contains the four STIG repos as subdirectories named
-exactly: RHEL9-STIG, Windows-2022-STIG, CISCO-IOS-L2S-STIG, KUBERNETES-STIG
-(case-insensitive directory match is attempted as a convenience).
+Where <clone_root> contains the five STIG repos as subdirectories named
+exactly: RHEL9-STIG, Windows-2022-STIG, CISCO-IOS-L2S-STIG,
+CISCO-IOS-RTR-STIG, KUBERNETES-STIG (case-insensitive directory match is
+attempted as a convenience).
 """
 import json
 import os
@@ -142,31 +151,53 @@ def resolve_nist_controls(rule, crosswalk_type, cci_to_nist):
 SOURCES = [
     {
         "technology": "linux",
-        "dirname_candidates": ["RHEL9-STIG", "rhel9-stig"],
-        "crosswalk_type": "direct",
-        "title": "DISA Red Hat Enterprise Linux 9 STIG",
-        "source_url": "https://github.com/ansible-lockdown/RHEL9-STIG",
+        "sources": [
+            {
+                "dirname_candidates": ["RHEL9-STIG", "rhel9-stig"],
+                "crosswalk_type": "direct",
+                "title": "DISA Red Hat Enterprise Linux 9 STIG",
+                "source_url": "https://github.com/ansible-lockdown/RHEL9-STIG",
+            },
+        ],
     },
     {
         "technology": "windows",
-        "dirname_candidates": ["Windows-2022-STIG", "windows-2022-stig"],
-        "crosswalk_type": "direct",
-        "title": "DISA Windows Server 2022 STIG",
-        "source_url": "https://github.com/ansible-lockdown/Windows-2022-STIG",
+        "sources": [
+            {
+                "dirname_candidates": ["Windows-2022-STIG", "windows-2022-stig"],
+                "crosswalk_type": "direct",
+                "title": "DISA Windows Server 2022 STIG",
+                "source_url": "https://github.com/ansible-lockdown/Windows-2022-STIG",
+            },
+        ],
     },
     {
         "technology": "network",
-        "dirname_candidates": ["CISCO-IOS-L2S-STIG", "cisco-ios-l2s-stig"],
-        "crosswalk_type": "cci",
-        "title": "DISA Cisco IOS Switch (L2S) STIG",
-        "source_url": "https://github.com/ansible-lockdown/CISCO-IOS-L2S-STIG",
+        "sources": [
+            {
+                "dirname_candidates": ["CISCO-IOS-L2S-STIG", "cisco-ios-l2s-stig"],
+                "crosswalk_type": "cci",
+                "title": "DISA Cisco IOS Switch (L2S) STIG",
+                "source_url": "https://github.com/ansible-lockdown/CISCO-IOS-L2S-STIG",
+            },
+            {
+                "dirname_candidates": ["CISCO-IOS-RTR-STIG", "cisco-ios-rtr-stig"],
+                "crosswalk_type": "cci",
+                "title": "DISA Cisco IOS Router STIG",
+                "source_url": "https://github.com/ansible-lockdown/CISCO-IOS-RTR-STIG/tree/devel",
+            },
+        ],
     },
     {
         "technology": "kubernetes",
-        "dirname_candidates": ["KUBERNETES-STIG", "kubernetes-stig"],
-        "crosswalk_type": "cci",
-        "title": "DISA Kubernetes STIG",
-        "source_url": "https://github.com/ansible-lockdown/KUBERNETES-STIG",
+        "sources": [
+            {
+                "dirname_candidates": ["KUBERNETES-STIG", "kubernetes-stig"],
+                "crosswalk_type": "cci",
+                "title": "DISA Kubernetes STIG",
+                "source_url": "https://github.com/ansible-lockdown/KUBERNETES-STIG",
+            },
+        ],
     },
 ]
 
@@ -192,36 +223,53 @@ def main():
     print(f"Parsed {len(cci_to_nist)} CCI -> NIST 800-53 Rev 4 mappings from Vulcan.")
 
     meta = {}
-    for src in SOURCES:
-        tasks_dir_root = find_dir(clone_root, src["dirname_candidates"])
-        if not tasks_dir_root:
-            print(f"WARNING: could not find clone for {src['technology']} ({src['dirname_candidates']}), skipping")
-            continue
-        tasks_dir = os.path.join(tasks_dir_root, "tasks")
-
-        raw_rules = parse_stig_dir(tasks_dir)
+    for tech_entry in SOURCES:
+        technology = tech_entry["technology"]
         out_rules = []
-        for rule in raw_rules:
-            nist_controls = resolve_nist_controls(rule, src["crosswalk_type"], cci_to_nist)
-            out_rules.append({
-                "id": rule["id"],
-                "severity": rule["severity"],
-                "title": rule["title"],
-                "cci": rule["cci"],
-                "nist_controls": nist_controls,
+        used_sources = []
+        for src in tech_entry["sources"]:
+            tasks_dir_root = find_dir(clone_root, src["dirname_candidates"])
+            if not tasks_dir_root:
+                print(f"WARNING: could not find clone for {technology} ({src['dirname_candidates']}), skipping that source")
+                continue
+            tasks_dir = os.path.join(tasks_dir_root, "tasks")
+
+            raw_rules = parse_stig_dir(tasks_dir)
+            src_rules = []
+            for rule in raw_rules:
+                nist_controls = resolve_nist_controls(rule, src["crosswalk_type"], cci_to_nist)
+                src_rules.append({
+                    "id": rule["id"],
+                    "severity": rule["severity"],
+                    "title": rule["title"],
+                    "cci": rule["cci"],
+                    "nist_controls": nist_controls,
+                })
+
+            mapped = sum(1 for r in src_rules if r["nist_controls"])
+            print(f"{technology} ({src['title']}): {len(src_rules)} rules parsed, {mapped} with a resolved NIST 800-53 control")
+
+            out_rules.extend(src_rules)
+            used_sources.append({
+                "title": src["title"],
+                "source_url": src["source_url"],
+                "crosswalk_type": src["crosswalk_type"],
+                "rule_count": len(src_rules),
             })
+
+        if not used_sources:
+            print(f"WARNING: no sources found for {technology}, skipping entirely")
+            continue
+
         out_rules.sort(key=lambda r: r["id"])
 
-        mapped = sum(1 for r in out_rules if r["nist_controls"])
-        print(f"{src['technology']}: {len(out_rules)} rules parsed, {mapped} with a resolved NIST 800-53 control")
-
-        with open(os.path.join(out_dir, f"{src['technology']}.json"), "w") as f:
+        with open(os.path.join(out_dir, f"{technology}.json"), "w") as f:
             json.dump(out_rules, f, separators=(",", ":"))
 
-        meta[src["technology"]] = {
-            "title": src["title"],
-            "source_url": src["source_url"],
-            "crosswalk_type": src["crosswalk_type"],
+        meta[technology] = {
+            "title": " + ".join(s["title"] for s in used_sources),
+            "sources": used_sources,
+            "crosswalk_type": used_sources[0]["crosswalk_type"],
             "rule_count": len(out_rules),
         }
 
