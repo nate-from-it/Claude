@@ -1,15 +1,19 @@
 const API_BASE = window.NIST_API_BASE || "http://localhost:5057";
 
+const MODES = { nist: "NIST Guidance", stig: "STIG Guidance" };
+
 const state = {
   families: [],
   audiences: [],
-  technologies: [], // scoped to the current audience
+  technologies: [], // scoped to the current audience (and, in STIG mode, to STIG-covered tech)
+  stigTechnologies: {}, // id -> source meta, only for technologies with STIG coverage
   activeFamily: null,
   query: "",
   includeEnhancements: true,
   selectedControlId: null,
   selectedTechnologies: new Set(),
   selectedAudience: "sysadmin",
+  mode: "nist",
 };
 
 const el = (id) => document.getElementById(id);
@@ -24,11 +28,17 @@ async function api(path, options) {
 }
 
 async function init() {
-  const [families, audiences] = await Promise.all([api("/api/families"), api("/api/audiences")]);
+  const [families, audiences, stigTechs] = await Promise.all([
+    api("/api/families"),
+    api("/api/audiences"),
+    api("/api/stig-technologies"),
+  ]);
   state.families = families;
   state.audiences = audiences;
+  state.stigTechnologies = Object.fromEntries(stigTechs.map((t) => [t.id, t]));
 
   renderFamilyList();
+  renderModeSelect();
   renderAudienceSelect();
   await refreshControlList();
 
@@ -87,6 +97,24 @@ function renderFamilyList() {
   }
 }
 
+function renderModeSelect() {
+  const container = el("mode-select");
+  container.innerHTML = "";
+  for (const key of Object.keys(MODES)) {
+    const btn = document.createElement("button");
+    btn.textContent = MODES[key];
+    btn.className = state.mode === key ? "active" : "";
+    btn.addEventListener("click", () => {
+      if (state.mode === key) return;
+      state.mode = key;
+      state.selectedTechnologies = new Set();
+      renderModeSelect();
+      refreshRoleView();
+    });
+    container.appendChild(btn);
+  }
+}
+
 function renderAudienceSelect() {
   const container = el("audience-select");
   container.innerHTML = "";
@@ -108,7 +136,19 @@ function renderAudienceSelect() {
 function renderTechSelect() {
   const container = el("tech-select");
   container.innerHTML = "";
-  for (const t of state.technologies) {
+  const visible = state.mode === "stig"
+    ? state.technologies.filter((t) => t.id in state.stigTechnologies)
+    : state.technologies;
+
+  if (state.mode === "stig" && visible.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No STIG-covered technology is available for this role.";
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const t of visible) {
     const label = document.createElement("label");
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
@@ -126,24 +166,41 @@ function renderTechSelect() {
   }
 }
 
-// Loads the role narrative + the technology list scoped to the current
-// audience for the currently open control. ISSO sees every technology;
-// Sysadmin/Net Admin each see only the technologies relevant to their role.
+// Loads the technology list scoped to the current audience (and, in STIG
+// mode, further scoped to STIG-covered tech) for the currently open
+// control, plus either the NIST role narrative or the STIG caveat note.
 async function refreshRoleView() {
   const narrativeEl = el("role-narrative");
-  narrativeEl.textContent = "Loading...";
+  const caveatEl = el("stig-caveat");
+  const btn = el("tailor-btn");
 
-  const [technologies, tailorData] = await Promise.all([
-    api(`/api/technologies?audience=${state.selectedAudience}`),
-    api(`/api/controls/${state.selectedControlId}/tailor`, {
+  if (state.mode === "stig") {
+    narrativeEl.classList.add("hidden");
+    caveatEl.classList.remove("hidden");
+    caveatEl.textContent =
+      "STIG rules come from DISA source repos tagged against NIST 800-53 Rev 4 " +
+      "(directly for Linux/Windows, via the official CCI crosswalk for Network/Kubernetes). " +
+      "Rev 4 and Rev 5 base control numbers are almost always the same, but this mapping isn't guaranteed for every control — verify before using as audit evidence.";
+    btn.textContent = "Show STIG rules";
+  } else {
+    caveatEl.classList.add("hidden");
+    narrativeEl.classList.remove("hidden");
+    narrativeEl.textContent = "Loading...";
+    btn.textContent = "Generate implementation guidance";
+  }
+
+  const technologies = await api(`/api/technologies?audience=${state.selectedAudience}`);
+  state.technologies = technologies;
+
+  if (state.mode === "nist") {
+    const tailorData = await api(`/api/controls/${state.selectedControlId}/tailor`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ technologies: [], audience: state.selectedAudience }),
-    }),
-  ]);
+    });
+    narrativeEl.textContent = tailorData.intro;
+  }
 
-  state.technologies = technologies;
-  narrativeEl.textContent = tailorData.intro;
   renderTechSelect();
   el("tailor-results").innerHTML = "";
 }
@@ -238,35 +295,100 @@ async function runTailor() {
 
   const btn = el("tailor-btn");
   btn.disabled = true;
-  btn.textContent = "Generating...";
+  btn.textContent = state.mode === "stig" ? "Loading..." : "Generating...";
 
   try {
-    const data = await api(`/api/controls/${state.selectedControlId}/tailor`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        technologies: Array.from(state.selectedTechnologies),
-        audience: state.selectedAudience,
-      }),
-    });
-
-    resultsEl.innerHTML = "";
-    for (const item of data.items) {
-      const card = document.createElement("div");
-      card.className = "tech-result";
-      const h4 = document.createElement("h4");
-      h4.textContent = item.technology_name;
-      const p = document.createElement("p");
-      p.textContent = item.guidance;
-      card.appendChild(h4);
-      card.appendChild(p);
-      resultsEl.appendChild(card);
+    if (state.mode === "stig") {
+      await runStig(resultsEl);
+    } else {
+      await runNistTailor(resultsEl);
     }
   } catch (err) {
     resultsEl.innerHTML = `<div class="error-state">${err.message}</div>`;
   } finally {
     btn.disabled = false;
-    btn.textContent = "Generate implementation guidance";
+    btn.textContent = state.mode === "stig" ? "Show STIG rules" : "Generate implementation guidance";
+  }
+}
+
+async function runNistTailor(resultsEl) {
+  const data = await api(`/api/controls/${state.selectedControlId}/tailor`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      technologies: Array.from(state.selectedTechnologies),
+      audience: state.selectedAudience,
+    }),
+  });
+
+  resultsEl.innerHTML = "";
+  for (const item of data.items) {
+    const card = document.createElement("div");
+    card.className = "tech-result";
+    const h4 = document.createElement("h4");
+    h4.textContent = item.technology_name;
+    const p = document.createElement("p");
+    p.textContent = item.guidance;
+    card.appendChild(h4);
+    card.appendChild(p);
+    resultsEl.appendChild(card);
+  }
+}
+
+const SEVERITY_CLASS = { "CAT I": "sev-1", "CAT II": "sev-2", "CAT III": "sev-3" };
+
+async function runStig(resultsEl) {
+  resultsEl.innerHTML = "";
+  const techs = Array.from(state.selectedTechnologies);
+  const results = await Promise.all(
+    techs.map((tech) => api(`/api/controls/${state.selectedControlId}/stig?technology=${tech}`))
+  );
+
+  for (const data of results) {
+    const group = document.createElement("div");
+    group.className = "stig-group";
+
+    const h4 = document.createElement("h4");
+    h4.textContent = data.technology_name + (data.source ? ` — ${data.source.title}` : "");
+    group.appendChild(h4);
+
+    if (!data.available) {
+      const p = document.createElement("p");
+      p.className = "empty-state";
+      p.textContent = "No STIG crosswalk available for this technology.";
+      group.appendChild(p);
+    } else if (data.rules.length === 0) {
+      const p = document.createElement("p");
+      p.className = "empty-state";
+      p.textContent = "No STIG rules in this source map to this control.";
+      group.appendChild(p);
+    } else {
+      for (const rule of data.rules) {
+        const card = document.createElement("div");
+        card.className = "stig-rule";
+        const head = document.createElement("div");
+        head.className = "stig-rule-head";
+        const sev = document.createElement("span");
+        sev.className = "sev-badge " + (SEVERITY_CLASS[rule.severity] || "");
+        sev.textContent = rule.severity;
+        const id = document.createElement("span");
+        id.className = "stig-rule-id";
+        id.textContent = rule.id;
+        head.appendChild(sev);
+        head.appendChild(id);
+        const title = document.createElement("p");
+        title.textContent = rule.title;
+        const cci = document.createElement("div");
+        cci.className = "stig-cci";
+        cci.textContent = rule.cci.join(", ");
+        card.appendChild(head);
+        card.appendChild(title);
+        card.appendChild(cci);
+        group.appendChild(card);
+      }
+    }
+
+    resultsEl.appendChild(group);
   }
 }
 

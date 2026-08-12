@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from tailoring import AUDIENCES, TECHNOLOGIES, tailor_control, technologies_for_audience
+from stigs import STIG_META, rules_for_control, stig_technologies
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "families")
 
@@ -103,6 +104,35 @@ def tailor(control_id, body):
     }
 
 
+def stig_for_control(control_id, params):
+    control = CONTROLS_BY_ID.get(control_id.lower())
+    if not control:
+        return 404, {"error": "control not found"}
+
+    technology = (params.get("technology", [""])[0] or "").strip()
+    if not technology:
+        return 400, {"error": "technology query param is required"}
+
+    if technology not in stig_technologies():
+        return 200, {
+            "control": {"id": control["id"], "number": control["number"], "title": control["title"]},
+            "technology": technology,
+            "technology_name": TECHNOLOGIES.get(technology, technology),
+            "available": False,
+            "rules": [],
+        }
+
+    rules = rules_for_control(control["number"], technology)
+    return 200, {
+        "control": {"id": control["id"], "number": control["number"], "title": control["title"]},
+        "technology": technology,
+        "technology_name": TECHNOLOGIES.get(technology, technology),
+        "available": True,
+        "source": STIG_META[technology],
+        "rules": rules,
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # keep stdout quiet; flip on for debugging
@@ -137,8 +167,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, [{"id": k, "name": TECHNOLOGIES[k]} for k in keys])
         elif path == "/api/audiences":
             self._send(200, [{"id": k, "name": v} for k, v in AUDIENCES.items()])
+        elif path == "/api/stig-technologies":
+            self._send(200, [{"id": k, **v} for k, v in STIG_META.items()])
         elif path == "/api/controls":
             status, payload = list_controls(params)
+            self._send(status, payload)
+        elif path.startswith("/api/controls/") and path.endswith("/stig"):
+            control_id = path[len("/api/controls/"):-len("/stig")]
+            status, payload = stig_for_control(control_id, params)
             self._send(status, payload)
         elif path.startswith("/api/controls/"):
             control_id = path[len("/api/controls/"):]
