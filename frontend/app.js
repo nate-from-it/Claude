@@ -323,6 +323,8 @@ async function refreshStigMatches() {
     card.appendChild(head);
     card.appendChild(title);
     if (rule.nist_controls.length) card.appendChild(controls);
+    const fixDetails = buildStigFixDetails(rule.fix);
+    if (fixDetails) card.appendChild(fixDetails);
     list.appendChild(card);
   }
 }
@@ -425,6 +427,23 @@ async function runNistTailor(resultsEl) {
 
 const SEVERITY_CLASS = { "CAT I": "sev-1", "CAT II": "sev-2", "CAT III": "sev-3" };
 
+// A STIG rule's title is just the "must" requirement - DISA's own fixtext
+// (carried through by build_stigs.py as rule.fix) is the actual step-by-step
+// remediation, often with real CLI/config examples. Collapsed by default
+// since it can run long; <pre> preserves the source's line breaks/indents.
+function buildStigFixDetails(fix) {
+  if (!fix) return null;
+  const details = document.createElement("details");
+  details.className = "stig-fix";
+  const summary = document.createElement("summary");
+  summary.textContent = "How to implement";
+  const pre = document.createElement("pre");
+  pre.textContent = fix;
+  details.appendChild(summary);
+  details.appendChild(pre);
+  return details;
+}
+
 async function runStig(resultsEl) {
   resultsEl.innerHTML = "";
   const techs = Array.from(state.selectedTechnologies);
@@ -472,6 +491,8 @@ async function runStig(resultsEl) {
         card.appendChild(head);
         card.appendChild(title);
         card.appendChild(cci);
+        const fixDetails = buildStigFixDetails(rule.fix);
+        if (fixDetails) card.appendChild(fixDetails);
         group.appendChild(card);
       }
     }

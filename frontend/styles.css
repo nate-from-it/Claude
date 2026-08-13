@@ -228,6 +228,31 @@ body {
 .stig-rule p { margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--text); }
 .stig-cci { margin-top: 6px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.75rem; color: var(--text-dim); }
 
+.stig-fix { margin-top: 8px; }
+.stig-fix summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  list-style: none;
+}
+.stig-fix summary::-webkit-details-marker { display: none; }
+.stig-fix summary::before { content: "▸ "; }
+.stig-fix[open] summary::before { content: "▾ "; }
+.stig-fix pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .sev-badge {
   font-size: 0.7rem;
   font-weight: 700;

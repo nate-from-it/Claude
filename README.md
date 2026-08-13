@@ -80,6 +80,12 @@ takes a control (e.g. `AC-17 Remote Access`) and translates it into:
   client productivity suite that doesn't fit any technology category
   here yet.
 
+  A rule's title only states the requirement ("The X must be configured
+  to..."), not how to actually do it — so each rule also carries DISA's
+  own `fixtext`, the step-by-step remediation (often real CLI/config
+  examples), under a collapsed **"How to implement"** disclosure on the
+  rule card.
+
   Every mapped NIST control ID is **Rev 4** (that's what DISA's STIGs and
   CCI list are tagged with) — the app matches it directly against its Rev
   5 catalog. Base control numbers (e.g. `AC-17`, `CM-6`) are almost always
