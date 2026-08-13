@@ -31,6 +31,8 @@ TECHNOLOGIES = {
     "kubernetes": "Kubernetes / Containers",
     "database": "Databases (RDBMS)",
     "identity": "Identity Provider / SSO / MFA",
+    "virtualization": "Virtualization (Hypervisors)",
+    "email": "Email / Messaging Servers",
 }
 
 AUDIENCES = {
@@ -52,6 +54,8 @@ TECH_AUDIENCE = {
     "database": {"sysadmin"},
     "identity": {"sysadmin", "netadmin"},
     "network": {"netadmin"},
+    "virtualization": {"sysadmin"},
+    "email": {"sysadmin"},
 }
 
 

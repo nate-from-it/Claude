@@ -14,7 +14,7 @@
 
   <div class="layout">
     <aside class="sidebar">
-      <input id="search" type="search" placeholder="Search controls (e.g. &quot;remote access&quot;, AC-17)" />
+      <input id="search" type="search" placeholder="Search controls or STIG rules (e.g. &quot;remote access&quot;, AC-17, SSH)" />
       <label class="checkbox-row">
         <input id="toggle-enhancements" type="checkbox" checked />
         Include control enhancements
@@ -25,6 +25,14 @@
 
     <main class="content">
       <section id="control-list-section">
+        <section id="stig-matches-section" class="hidden">
+          <div class="list-header">
+            <h2>Matching STIG Rules</h2>
+            <span id="stig-matches-count" class="count-badge"></span>
+          </div>
+          <div id="stig-matches-list"></div>
+        </section>
+
         <div class="list-header">
           <h2 id="list-title">All Controls</h2>
           <span id="list-count" class="count-badge"></span>

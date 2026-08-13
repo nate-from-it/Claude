@@ -4,16 +4,14 @@ app tailors guidance for. See scripts/build_stigs.py for how the data in
 data/stigs/*.json was generated and why.
 
 Coverage is intentionally partial: only technologies with a real,
-traceable path from STIG rule to NIST 800-53 control are included.
-- linux (RHEL 9), windows (Server 2022): the source STIG tags each rule
-  with its NIST 800-53 control directly.
-- network (Cisco IOS switches), kubernetes: the source STIG only tags CCI
-  numbers; those are bridged to NIST 800-53 via MITRE Vulcan's DISA CCI
-  crosswalk table.
-- aws/azure/gcp/identity/database: no STIG crosswalk available. DISA
-  doesn't publish cloud-platform STIGs the way it does for OS/network
-  baselines, and the one available database STIG source (PostgreSQL 9.x)
-  has no CCI or NIST tagging at all to bridge from.
+traceable path from STIG rule to NIST 800-53 control are included -
+linux, windows, network, kubernetes, database, virtualization, email.
+Every rule here comes straight from a real DISA STIG/SRG zip (not a
+third-party automation repo); every rule tags CCI numbers, which are
+bridged to NIST 800-53 via MITRE Vulcan's DISA CCI crosswalk table.
+aws/azure/gcp/identity have no STIG crosswalk available - DISA doesn't
+publish STIGs for those the way it does for OS/network/database
+baselines.
 
 Every mapped NIST control ID here is Rev 4 (that's what DISA's STIGs and
 CCI list are tagged with). Base control numbers are almost always
@@ -62,3 +60,31 @@ def rules_for_control(control_number, technology):
         return []
     base = base_control_number(control_number)
     return [r for r in rules if base in r["nist_controls"]]
+
+
+SEVERITY_ORDER = {"CAT I": 0, "CAT II": 1, "CAT III": 2}
+SEARCH_RESULT_LIMIT = 150
+
+
+def search_rules(query, technologies=None):
+    """Keyword search over rule id/title/CCI across the given technologies
+    (or all STIG-covered technologies if omitted). Matches are plain
+    case-insensitive substring checks, sorted by severity then id, and
+    capped at SEARCH_RESULT_LIMIT - callers get back the true match count
+    plus whether the list was truncated."""
+    query = query.strip().lower()
+    if not query:
+        return 0, False, []
+
+    techs = [t for t in (technologies or STIG_RULES) if t in STIG_RULES]
+
+    matches = []
+    for tech in techs:
+        for rule in STIG_RULES[tech]:
+            haystack = f"{rule['id']} {rule['title']} {' '.join(rule['cci'])}".lower()
+            if query in haystack:
+                matches.append({**rule, "technology": tech})
+
+    matches.sort(key=lambda r: (SEVERITY_ORDER.get(r["severity"], 9), r["id"]))
+    total = len(matches)
+    return total, total > SEARCH_RESULT_LIMIT, matches[:SEARCH_RESULT_LIMIT]
