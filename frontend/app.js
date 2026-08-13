@@ -45,6 +45,7 @@ async function init() {
   el("search").addEventListener("input", debounce((e) => {
     state.query = e.target.value;
     refreshControlList();
+    refreshStigMatches();
   }, 250));
 
   el("toggle-enhancements").addEventListener("change", (e) => {
@@ -178,8 +179,8 @@ async function refreshRoleView() {
     narrativeEl.classList.add("hidden");
     caveatEl.classList.remove("hidden");
     caveatEl.textContent =
-      "STIG rules come from DISA source repos tagged against NIST 800-53 Rev 4 " +
-      "(directly for Linux/Windows, via the official CCI crosswalk for Network/Kubernetes). " +
+      "STIG rules come straight from DISA's own STIG/SRG zips, tagged against NIST 800-53 Rev 4 " +
+      "via the official DISA CCI crosswalk. " +
       "Rev 4 and Rev 5 base control numbers are almost always the same, but this mapping isn't guaranteed for every control — verify before using as audit evidence.";
     btn.textContent = "Show STIG rules";
   } else {
@@ -253,6 +254,93 @@ async function refreshControlList() {
     li.addEventListener("click", () => showDetail(c.id));
     ul.appendChild(li);
   }
+}
+
+// Direct keyword search over STIG rule id/title/CCI, independent of
+// picking a control first - separate from refreshControlList()'s NIST
+// control text search, since a keyword like "SSH" is far more likely to
+// hit rule titles than the control catalog's abstract control text.
+async function refreshStigMatches() {
+  const section = el("stig-matches-section");
+  const query = state.query.trim();
+  if (query.length < 2) {
+    section.classList.add("hidden");
+    return;
+  }
+
+  const data = await api(`/api/stig/search?q=${encodeURIComponent(query)}`);
+  section.classList.remove("hidden");
+  el("stig-matches-count").textContent = data.truncated
+    ? `showing ${data.results.length} of ${data.count}`
+    : `${data.count} match${data.count === 1 ? "" : "es"}`;
+
+  const list = el("stig-matches-list");
+  list.innerHTML = "";
+  if (data.results.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No STIG rules match your search.";
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const rule of data.results) {
+    const card = document.createElement("div");
+    card.className = "stig-rule";
+
+    const head = document.createElement("div");
+    head.className = "stig-rule-head";
+    const sev = document.createElement("span");
+    sev.className = "sev-badge " + (SEVERITY_CLASS[rule.severity] || "");
+    sev.textContent = rule.severity;
+    const tech = document.createElement("span");
+    tech.className = "tech-tag";
+    tech.textContent = rule.technology_name;
+    const id = document.createElement("span");
+    id.className = "stig-rule-id";
+    id.textContent = rule.id;
+    head.appendChild(sev);
+    head.appendChild(tech);
+    head.appendChild(id);
+
+    const title = document.createElement("p");
+    title.textContent = rule.title;
+
+    const controls = document.createElement("div");
+    controls.className = "stig-match-controls";
+    for (const c of rule.nist_controls) {
+      const link = document.createElement("button");
+      link.className = "control-link";
+      link.textContent = c.id ? `${c.number} — ${c.title}` : c.number;
+      if (c.id) {
+        link.addEventListener("click", () => jumpToStigMatch(c.id, rule.technology));
+      } else {
+        link.disabled = true;
+      }
+      controls.appendChild(link);
+    }
+
+    card.appendChild(head);
+    card.appendChild(title);
+    if (rule.nist_controls.length) card.appendChild(controls);
+    list.appendChild(card);
+  }
+}
+
+// Jumps from a STIG search-result hit straight to that control, in STIG
+// mode, with the matching technology pre-selected and its rules shown.
+// Switches audience to ISSO first since it's the only one guaranteed to
+// see every technology - a search hit for e.g. "network" wouldn't even
+// have a checkbox to show as checked under the sysadmin-scoped default.
+async function jumpToStigMatch(controlId, technology) {
+  state.mode = "stig";
+  state.selectedAudience = "isso";
+  renderModeSelect();
+  renderAudienceSelect();
+  await showDetail(controlId);
+  state.selectedTechnologies = new Set([technology]);
+  renderTechSelect();
+  await runTailor();
 }
 
 async function showDetail(controlId) {

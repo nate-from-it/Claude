@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from tailoring import AUDIENCES, TECHNOLOGIES, tailor_control, technologies_for_audience
-from stigs import STIG_META, rules_for_control, stig_technologies
+from stigs import STIG_META, rules_for_control, search_rules, stig_technologies
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "families")
 
@@ -30,6 +30,10 @@ def load_catalog():
 CATALOG = load_catalog()
 CONTROLS_BY_ID = {c["id"]: c for c in CATALOG["controls"]}
 FAMILIES = CATALOG["families"]
+# STIG rules carry base NIST control numbers (e.g. "AC-4"), which is also
+# the number of that control's own (non-enhancement) catalog entry - so
+# this maps a base number straight to its control id for deep-linking.
+CONTROL_ID_BY_NUMBER = {c["number"]: c["id"] for c in CATALOG["controls"] if not c["is_enhancement"]}
 
 
 def family_counts():
@@ -133,6 +137,33 @@ def stig_for_control(control_id, params):
     }
 
 
+def stig_search(params):
+    query = (params.get("q", [""])[0] or "").strip()
+    technologies = params.get("technology") or None
+
+    total, truncated, rules = search_rules(query, technologies)
+    results = []
+    for r in rules:
+        controls = []
+        for number in r["nist_controls"]:
+            control_id = CONTROL_ID_BY_NUMBER.get(number)
+            if control_id:
+                controls.append({"id": control_id, "number": number, "title": CONTROLS_BY_ID[control_id]["title"]})
+            else:
+                controls.append({"id": None, "number": number, "title": None})
+        results.append({
+            "technology": r["technology"],
+            "technology_name": TECHNOLOGIES.get(r["technology"], r["technology"]),
+            "id": r["id"],
+            "severity": r["severity"],
+            "title": r["title"],
+            "cci": r["cci"],
+            "nist_controls": controls,
+        })
+
+    return 200, {"query": query, "count": total, "truncated": truncated, "results": results}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # keep stdout quiet; flip on for debugging
@@ -169,6 +200,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, [{"id": k, "name": v} for k, v in AUDIENCES.items()])
         elif path == "/api/stig-technologies":
             self._send(200, [{"id": k, **v} for k, v in STIG_META.items()])
+        elif path == "/api/stig/search":
+            status, payload = stig_search(params)
+            self._send(status, payload)
         elif path == "/api/controls":
             status, payload = list_controls(params)
             self._send(status, payload)
