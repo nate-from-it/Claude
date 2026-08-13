@@ -55,6 +55,58 @@ async function init() {
 
   el("back-btn").addEventListener("click", () => showListView());
   el("tailor-btn").addEventListener("click", runTailor);
+
+  el("narrative-start-btn").addEventListener("click", startNarrativeFlow);
+  el("narrative-met-btn").addEventListener("click", () => generateAtoNarrative("met"));
+  el("narrative-not-met-btn").addEventListener("click", () => generateAtoNarrative("not_met"));
+  el("narrative-copy-btn").addEventListener("click", copyNarrativeToClipboard);
+  el("narrative-restart-btn").addEventListener("click", resetNarrativeUI);
+}
+
+// ISSO-only: drafts an SSP implementation statement (control met) or a
+// POA&M-style gap/compensating-control narrative (control not met) for
+// ATO/A&A documentation. Rule-based like the rest of the app's guidance,
+// not an LLM call - a structured first draft for the ISSO to edit.
+function resetNarrativeUI() {
+  el("narrative-question").classList.add("hidden");
+  el("narrative-output").classList.add("hidden");
+  el("narrative-start-btn").classList.remove("hidden");
+  el("narrative-hint").classList.add("hidden");
+  el("narrative-copy-status").textContent = "";
+}
+
+function renderNarrativeSection() {
+  el("narrative-section").classList.toggle("hidden", state.selectedAudience !== "isso");
+  resetNarrativeUI();
+}
+
+function startNarrativeFlow() {
+  if (state.selectedTechnologies.size === 0) {
+    el("narrative-hint").classList.remove("hidden");
+    return;
+  }
+  el("narrative-hint").classList.add("hidden");
+  el("narrative-start-btn").classList.add("hidden");
+  el("narrative-question").classList.remove("hidden");
+}
+
+async function generateAtoNarrative(status) {
+  el("narrative-question").classList.add("hidden");
+  const data = await api(`/api/controls/${state.selectedControlId}/narrative`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technologies: Array.from(state.selectedTechnologies), status }),
+  });
+  el("narrative-text").value = data.narrative;
+  el("narrative-output").classList.remove("hidden");
+}
+
+function copyNarrativeToClipboard() {
+  navigator.clipboard.writeText(el("narrative-text").value).then(() => {
+    const status = el("narrative-copy-status");
+    status.textContent = "Copied!";
+    setTimeout(() => { status.textContent = ""; }, 2000);
+  });
 }
 
 function debounce(fn, ms) {
@@ -203,6 +255,7 @@ async function refreshRoleView() {
   }
 
   renderTechSelect();
+  renderNarrativeSection();
   el("tailor-results").innerHTML = "";
 }
 
@@ -323,6 +376,8 @@ async function refreshStigMatches() {
     card.appendChild(head);
     card.appendChild(title);
     if (rule.nist_controls.length) card.appendChild(controls);
+    const fixDetails = buildStigFixDetails(rule.fix);
+    if (fixDetails) card.appendChild(fixDetails);
     list.appendChild(card);
   }
 }
@@ -425,6 +480,23 @@ async function runNistTailor(resultsEl) {
 
 const SEVERITY_CLASS = { "CAT I": "sev-1", "CAT II": "sev-2", "CAT III": "sev-3" };
 
+// A STIG rule's title is just the "must" requirement - DISA's own fixtext
+// (carried through by build_stigs.py as rule.fix) is the actual step-by-step
+// remediation, often with real CLI/config examples. Collapsed by default
+// since it can run long; <pre> preserves the source's line breaks/indents.
+function buildStigFixDetails(fix) {
+  if (!fix) return null;
+  const details = document.createElement("details");
+  details.className = "stig-fix";
+  const summary = document.createElement("summary");
+  summary.textContent = "How to implement";
+  const pre = document.createElement("pre");
+  pre.textContent = fix;
+  details.appendChild(summary);
+  details.appendChild(pre);
+  return details;
+}
+
 async function runStig(resultsEl) {
   resultsEl.innerHTML = "";
   const techs = Array.from(state.selectedTechnologies);
@@ -472,6 +544,8 @@ async function runStig(resultsEl) {
         card.appendChild(head);
         card.appendChild(title);
         card.appendChild(cci);
+        const fixDetails = buildStigFixDetails(rule.fix);
+        if (fixDetails) card.appendChild(fixDetails);
         group.appendChild(card);
       }
     }

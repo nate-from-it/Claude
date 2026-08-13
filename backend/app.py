@@ -11,6 +11,7 @@ from urllib.parse import urlparse, parse_qs
 
 from tailoring import AUDIENCES, TECHNOLOGIES, tailor_control, technologies_for_audience
 from stigs import STIG_META, rules_for_control, search_rules, stig_technologies
+from narrative import generate_narrative
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "families")
 
@@ -137,6 +138,36 @@ def stig_for_control(control_id, params):
     }
 
 
+def narrative_for_control(control_id, body):
+    control = CONTROLS_BY_ID.get(control_id.lower())
+    if not control:
+        return 404, {"error": "control not found"}
+
+    technologies = body.get("technologies") or []
+    status = body.get("status")
+
+    if not isinstance(technologies, list) or not technologies:
+        return 400, {"error": "technologies must be a non-empty list"}
+    if status not in ("met", "not_met"):
+        return 400, {"error": 'status must be "met" or "not_met"'}
+
+    technologies = [t for t in technologies if t in TECHNOLOGIES]
+    if not technologies:
+        return 400, {"error": "no valid technologies given"}
+
+    stig_rule_ids_by_tech = {}
+    for tech in technologies:
+        if tech in stig_technologies():
+            stig_rule_ids_by_tech[tech] = [r["id"] for r in rules_for_control(control["number"], tech)]
+
+    narrative = generate_narrative(control, technologies, status, stig_rule_ids_by_tech)
+    return 200, {
+        "control": {"id": control["id"], "number": control["number"], "title": control["title"]},
+        "status": status,
+        "narrative": narrative,
+    }
+
+
 def stig_search(params):
     query = (params.get("q", [""])[0] or "").strip()
     technologies = params.get("technology") or None
@@ -231,6 +262,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "invalid JSON body"})
                 return
             status, payload = tailor(control_id, body)
+            self._send(status, payload)
+        elif path.startswith("/api/controls/") and path.endswith("/narrative"):
+            control_id = path[len("/api/controls/"):-len("/narrative")]
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                body = json.loads(raw or b"{}")
+            except json.JSONDecodeError:
+                self._send(400, {"error": "invalid JSON body"})
+                return
+            status, payload = narrative_for_control(control_id, body)
             self._send(status, payload)
         else:
             self._send(404, {"error": "not found"})

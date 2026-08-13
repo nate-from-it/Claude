@@ -24,6 +24,13 @@ takes a control (e.g. `AC-17 Remote Access`) and translates it into:
    ID, title, or CCI) at the same time, so searching e.g. "SSH" surfaces
    both without needing to already know which control governs it. Click
    a STIG match's mapped control to jump straight to it.
+5. **ATO/A&A narrative drafting** (ISSO only) — a "Generate A&A narrative"
+   button under the tailoring panel asks whether the control is fully
+   met, then drafts an SSP-style implementation statement (if met) or a
+   POA&M-style gap/compensating-control narrative (if not), pulling in
+   the real technical guidance and STIG rule IDs already in the app as
+   evidence. Rule-based like everything else here, not an LLM call — a
+   structured first draft to edit and finalize, not a final artifact.
 
 ## How it works
 
@@ -80,6 +87,12 @@ takes a control (e.g. `AC-17 Remote Access`) and translates it into:
   client productivity suite that doesn't fit any technology category
   here yet.
 
+  A rule's title only states the requirement ("The X must be configured
+  to..."), not how to actually do it — so each rule also carries DISA's
+  own `fixtext`, the step-by-step remediation (often real CLI/config
+  examples), under a collapsed **"How to implement"** disclosure on the
+  rule card.
+
   Every mapped NIST control ID is **Rev 4** (that's what DISA's STIGs and
   CCI list are tagged with) — the app matches it directly against its Rev
   5 catalog. Base control numbers (e.g. `AC-17`, `CM-6`) are almost always
@@ -131,6 +144,7 @@ different host/port, set it before the app script loads:
 | `GET /api/stig-technologies` | Technologies with STIG coverage, with source title/URL/crosswalk type/rule count |
 | `GET /api/controls/<id>/stig?technology=linux` | STIG rules for that technology that map to this control. `available: false` for a technology with no STIG coverage. |
 | `GET /api/stig/search?q=ssh&technology=linux&technology=network` | Keyword search over STIG rule id/title/CCI, independent of picking a control first — matches `q` as a substring, optionally scoped to one or more `technology` params (omit for all). Each match includes the NIST control(s) it maps to, for deep-linking back into `/api/controls/<id>`. Capped at 150 results (`truncated: true` if more matched). |
+| `POST /api/controls/<id>/narrative` | Body: `{"technologies": ["aws"], "status": "met"}` (`status` is `"met"` or `"not_met"`) — drafts an ATO/A&A narrative for the ISSO audience. See `backend/narrative.py`. |
 
 ## Extending the tailoring knowledge base
 
@@ -151,6 +165,13 @@ want to go deeper than family-level guidance (e.g. control-specific
 guidance for `AC-2` vs. the rest of the `AC` family), key an entry by the
 control's `id` (e.g. `"ac-2"`) and look it up before the family-level
 fallback in `resolve_tech_guidance()`.
+
+`backend/narrative.py`'s `COMPENSATING_CONTROL_SUGGESTIONS[family]` is the
+same idea, one level down: a single sentence per family suggesting the
+*kind* of compensating control that family typically involves, used only
+in the "not fully met" ATO narrative. It's deliberately generic — the
+narrative always frames it as something the ISSO confirms or replaces,
+never as a fact about the actual environment.
 
 ## Regenerating the control catalog
 

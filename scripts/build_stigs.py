@@ -13,6 +13,11 @@ DISA's own XCCDF benchmarks tag every rule with CCI references directly
 straight from the real STIG zips and needs no ansible dependency at all -
 just CCI -> NIST 800-53 resolution via the same Vulcan crosswalk table.
 
+Each rule's <fixtext> - DISA's own step-by-step remediation instructions,
+often with real CLI/registry/config examples - is carried through as the
+rule's "fix" field, since a bare "must be configured to..." title tells
+you the requirement but not how to actually meet it.
+
 A STIG zip commonly bundles more than one XCCDF benchmark document (e.g. a
 switch STIG zip usually has separate L2S/NDM/RTR documents; a firewall
 vendor zip might have Firewall/IPS/NDM/VPN documents). All of those are
@@ -110,7 +115,9 @@ def parse_xccdf(path):
             ident.text.strip() for ident in rule.findall(q("ident"))
             if ident.get("system") == "http://cyber.mil/cci" and ident.text
         })
-        rules.append({"id": rule_id, "severity": severity, "title": rule_title, "cci": cci})
+        fixtext_el = rule.find(q("fixtext"))
+        fix = (fixtext_el.text or "").strip() if fixtext_el is not None else ""
+        rules.append({"id": rule_id, "severity": severity, "title": rule_title, "cci": cci, "fix": fix})
 
     return {
         "benchmark_id": root.get("id") or title,
@@ -229,6 +236,7 @@ def main():
                     "title": rule["title"],
                     "cci": rule["cci"],
                     "nist_controls": nist_controls,
+                    "fix": rule["fix"],
                 })
             mapped = sum(1 for r in src_rules if r["nist_controls"])
             print(f"{technology} ({b['title']} V{b['version']}R{b['release']}): "
