@@ -217,6 +217,43 @@ body {
 .tech-result h4 { margin: 0 0 6px; color: var(--accent); font-size: 0.9rem; }
 .tech-result p { margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--text); }
 
+.secondary-btn {
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+.secondary-btn:hover { border-color: var(--accent-dim); }
+
+.narrative-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+.narrative-section h4 { margin: 0 0 10px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); }
+.narrative-hint { color: var(--warn); font-size: 0.82rem; margin: 8px 0 0; }
+
+.narrative-question { margin-top: 12px; }
+.narrative-question p { margin: 0 0 8px; font-size: 0.9rem; }
+.narrative-question-actions { display: flex; gap: 10px; }
+
+.narrative-output { margin-top: 12px; }
+.narrative-output textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+.narrative-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.narrative-copy-status { color: var(--success); font-size: 0.82rem; }
+
 .empty-state { color: var(--text-dim); font-size: 0.9rem; padding: 20px 0; }
 .error-state { color: #f87171; font-size: 0.9rem; padding: 10px 0; }
 

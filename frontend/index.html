@@ -77,6 +77,29 @@
           <button id="tailor-btn" class="primary-btn">Generate implementation guidance</button>
 
           <div id="tailor-results" class="tailor-results"></div>
+
+          <div id="narrative-section" class="narrative-section hidden">
+            <h4>ATO / A&amp;A Documentation</h4>
+            <button id="narrative-start-btn" class="secondary-btn">Generate A&amp;A narrative</button>
+            <p id="narrative-hint" class="narrative-hint hidden">Select at least one technology above first.</p>
+
+            <div id="narrative-question" class="narrative-question hidden">
+              <p>Are you fully meeting this control?</p>
+              <div class="narrative-question-actions">
+                <button id="narrative-met-btn" class="secondary-btn">Yes, fully implemented</button>
+                <button id="narrative-not-met-btn" class="secondary-btn">No, not fully implemented</button>
+              </div>
+            </div>
+
+            <div id="narrative-output" class="narrative-output hidden">
+              <textarea id="narrative-text" rows="16"></textarea>
+              <div class="narrative-actions">
+                <button id="narrative-copy-btn" class="secondary-btn">Copy to clipboard</button>
+                <button id="narrative-restart-btn" class="link-btn">Start over</button>
+                <span id="narrative-copy-status" class="narrative-copy-status"></span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </main>

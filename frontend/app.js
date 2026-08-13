@@ -55,6 +55,58 @@ async function init() {
 
   el("back-btn").addEventListener("click", () => showListView());
   el("tailor-btn").addEventListener("click", runTailor);
+
+  el("narrative-start-btn").addEventListener("click", startNarrativeFlow);
+  el("narrative-met-btn").addEventListener("click", () => generateAtoNarrative("met"));
+  el("narrative-not-met-btn").addEventListener("click", () => generateAtoNarrative("not_met"));
+  el("narrative-copy-btn").addEventListener("click", copyNarrativeToClipboard);
+  el("narrative-restart-btn").addEventListener("click", resetNarrativeUI);
+}
+
+// ISSO-only: drafts an SSP implementation statement (control met) or a
+// POA&M-style gap/compensating-control narrative (control not met) for
+// ATO/A&A documentation. Rule-based like the rest of the app's guidance,
+// not an LLM call - a structured first draft for the ISSO to edit.
+function resetNarrativeUI() {
+  el("narrative-question").classList.add("hidden");
+  el("narrative-output").classList.add("hidden");
+  el("narrative-start-btn").classList.remove("hidden");
+  el("narrative-hint").classList.add("hidden");
+  el("narrative-copy-status").textContent = "";
+}
+
+function renderNarrativeSection() {
+  el("narrative-section").classList.toggle("hidden", state.selectedAudience !== "isso");
+  resetNarrativeUI();
+}
+
+function startNarrativeFlow() {
+  if (state.selectedTechnologies.size === 0) {
+    el("narrative-hint").classList.remove("hidden");
+    return;
+  }
+  el("narrative-hint").classList.add("hidden");
+  el("narrative-start-btn").classList.add("hidden");
+  el("narrative-question").classList.remove("hidden");
+}
+
+async function generateAtoNarrative(status) {
+  el("narrative-question").classList.add("hidden");
+  const data = await api(`/api/controls/${state.selectedControlId}/narrative`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technologies: Array.from(state.selectedTechnologies), status }),
+  });
+  el("narrative-text").value = data.narrative;
+  el("narrative-output").classList.remove("hidden");
+}
+
+function copyNarrativeToClipboard() {
+  navigator.clipboard.writeText(el("narrative-text").value).then(() => {
+    const status = el("narrative-copy-status");
+    status.textContent = "Copied!";
+    setTimeout(() => { status.textContent = ""; }, 2000);
+  });
 }
 
 function debounce(fn, ms) {
@@ -203,6 +255,7 @@ async function refreshRoleView() {
   }
 
   renderTechSelect();
+  renderNarrativeSection();
   el("tailor-results").innerHTML = "";
 }
 

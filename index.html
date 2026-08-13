@@ -413,6 +413,48 @@
   .generate-btn:active { background: var(--accent-strong); }
   .generate-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
+  .secondary-btn {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .secondary-btn:hover { border-color: var(--accent); }
+
+  .narrative-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .narrative-section h4 {
+    margin: 0 0 10px;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-faint);
+  }
+  .narrative-hint { color: var(--warn); font-size: 12.5px; margin: 8px 0 0; }
+  .narrative-question { margin-top: 12px; }
+  .narrative-question p { margin: 0 0 8px; font-size: 13.5px; }
+  .narrative-question-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .narrative-output { margin-top: 12px; }
+  .narrative-output textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 11px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    resize: vertical;
+  }
+  .narrative-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+  .narrative-actions .back-btn { padding: 6px 0; }
+  .narrative-copy-status { color: var(--good); font-size: 12.5px; }
+
   .tailor-results { margin-top: 14px; display: flex; flex-direction: column; gap: 9px; }
   .tech-card {
     background: var(--surface);
@@ -595,6 +637,29 @@
         <div class="tech-grid" id="tech-select"></div>
         <button class="generate-btn" id="generate-btn">Generate guidance</button>
         <div class="tailor-results" id="tailor-results"></div>
+
+        <div id="narrative-section" class="narrative-section hidden">
+          <h4>ATO / A&amp;A Documentation</h4>
+          <button id="narrative-start-btn" class="secondary-btn">Generate A&amp;A narrative</button>
+          <p id="narrative-hint" class="narrative-hint hidden">Select at least one technology above first.</p>
+
+          <div id="narrative-question" class="narrative-question hidden">
+            <p>Are you fully meeting this control?</p>
+            <div class="narrative-question-actions">
+              <button id="narrative-met-btn" class="secondary-btn">Yes, fully implemented</button>
+              <button id="narrative-not-met-btn" class="secondary-btn">No, not fully implemented</button>
+            </div>
+          </div>
+
+          <div id="narrative-output" class="narrative-output hidden">
+            <textarea id="narrative-text" rows="16"></textarea>
+            <div class="narrative-actions">
+              <button id="narrative-copy-btn" class="secondary-btn">Copy to clipboard</button>
+              <button id="narrative-restart-btn" class="back-btn">Start over</button>
+              <span id="narrative-copy-status" class="narrative-copy-status"></span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <p class="foot-note">Guidance is rule-based (family × technology × role), not AI-generated per control — verify against your environment.</p>
@@ -1069,6 +1134,7 @@ function refreshRoleView() {
   }
 
   renderTechSelect();
+  renderNarrativeSection();
   $("tailor-results").innerHTML = "";
 }
 
@@ -1206,6 +1272,150 @@ function debounce(fn, ms) {
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
 
+// ISSO-only: drafts an SSP implementation statement (control met) or a
+// POA&M-style gap/compensating-control narrative (control not met) for
+// ATO/A&A documentation. Rule-based like the rest of the app's guidance,
+// not an LLM call - a structured first draft for the ISSO to edit. Mirrors
+// backend/narrative.py exactly since this bundle has no backend to call.
+const COMPENSATING_CONTROL_SUGGESTIONS = {
+  AC: "temporary manual approval/review of access requests, tightened network segmentation limiting reachability of the affected system, and more frequent access recertification",
+  AT: "supplemental ad hoc briefings or reminders to affected personnel and increased supervisory oversight until formal training is current",
+  AU: "increased manual log review frequency and temporary alerting rules covering the gap until automated logging/retention is fully in place",
+  CA: "an interim risk acceptance memo and more frequent manual status checks until the formal assessment/authorization activity is complete",
+  CM: "manual change-approval review and periodic manual configuration audits until automated baseline enforcement is in place",
+  CP: "documented manual failover/recovery procedures and more frequent tabletop exercises until the automated capability is implemented",
+  IA: "additional manual identity verification steps and closer monitoring of the affected accounts until strong authentication is enforced",
+  IR: "designated on-call manual escalation procedures and closer monitoring until the automated detection/response capability is operational",
+  MA: "supervised/escorted maintenance sessions and manual logging of maintenance activity until automated controls are in place",
+  MP: "manual media handling/tracking procedures and restricted physical access until automated controls are implemented",
+  PE: "additional manual physical access logging or guard/escort procedures until the automated physical control is in place",
+  PL: "an interim documented plan or memo covering the gap until the formal planning artifact is finalized",
+  PM: "interim manual tracking by the program office until the formal program-level control is fully established",
+  PS: "manual supervisory review of affected personnel actions until the automated personnel security control is in place",
+  PT: "manual review of the affected processing activity and restricted access to the data until automated privacy controls are implemented",
+  RA: "an interim manual risk assessment and closer monitoring until the formal, tool-supported risk assessment is complete",
+  SA: "manual contract/acquisition review checkpoints until the automated acquisition control is enforced",
+  SC: "compensating network-layer restrictions (e.g. additional segmentation or filtering) until the system/communications control is fully implemented",
+  SI: "increased manual monitoring/scanning frequency until the automated integrity control is in place",
+  SR: "manual supplier/vendor review checkpoints and heightened scrutiny of the affected supply chain element until the formal control is implemented",
+};
+
+function techScopePhrase(techNames) {
+  if (techNames.length === 0) return "the in-scope environment";
+  if (techNames.length === 1) return techNames[0];
+  return techNames.slice(0, -1).join(", ") + " and " + techNames[techNames.length - 1];
+}
+
+function trimText(text, limit) {
+  limit = limit || 300;
+  text = (text || "").trim().replace(/\n/g, " ");
+  return text.length <= limit ? text : text.slice(0, limit - 3) + "...";
+}
+
+function generateAtoNarrativeText(control, technologies, status, stigRuleIdsByTech) {
+  stigRuleIdsByTech = stigRuleIdsByTech || {};
+  const today = new Date().toISOString().slice(0, 10);
+  const tailored = tailorControl(control, technologies, "isso");
+  const scope = techScopePhrase(technologies.map((t) => TECHNOLOGIES[t] || t));
+  const number = control.number || "", title = control.title || "";
+
+  const lines = [`${number} — ${title}`];
+
+  if (status === "met") {
+    lines.push(
+      "Status: Implemented",
+      `Environment: ${scope}`,
+      `Reviewed: ${today}`,
+      "",
+      "Implementation summary:",
+      tailored.intro,
+      "",
+      "Technical implementation:"
+    );
+    for (const item of tailored.items) {
+      lines.push(`- ${item.technologyName}: ${item.guidance}`);
+      const ruleIds = stigRuleIdsByTech[item.technology] || [];
+      if (ruleIds.length) {
+        const shown = ruleIds.slice(0, 10).join(", ");
+        const extra = ruleIds.length > 10 ? ` (+${ruleIds.length - 10} more)` : "";
+        lines.push(`  Configuration evidence: DISA STIG rules ${shown}${extra}.`);
+      }
+    }
+    const statement = trimText(control.statement);
+    if (statement) lines.push("", `This satisfies the control requirement: "${statement}"`);
+  } else {
+    const suggestion = COMPENSATING_CONTROL_SUGGESTIONS[control.family] ||
+      "compensating procedural or technical controls appropriate to this control family";
+    lines.push(
+      "Status: Partially Implemented / Planned",
+      `Environment: ${scope}`,
+      `Reviewed: ${today}`,
+      "",
+      "Implementation gap:",
+      `${number} is not fully implemented for ${scope}. [ISSO: describe the specific requirement(s) not yet met].`,
+      "",
+      "Compensating/mitigating controls:",
+      `Controls typically applicable to this family include ${suggestion}. [ISSO: confirm which are actually in place, or describe the actual compensating controls used].`,
+      "",
+      "Planned remediation and target completion date:",
+      "[ISSO: describe the remediation plan and target date].",
+      "",
+      "Residual risk determination:",
+      "[ISSO: Low/Moderate/High], accepted by [Authorizing Official] pending remediation."
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function resetNarrativeUI() {
+  $("narrative-question").classList.add("hidden");
+  $("narrative-output").classList.add("hidden");
+  $("narrative-start-btn").classList.remove("hidden");
+  $("narrative-hint").classList.add("hidden");
+  $("narrative-copy-status").textContent = "";
+}
+
+function renderNarrativeSection() {
+  $("narrative-section").classList.toggle("hidden", state.selectedAudience !== "isso");
+  resetNarrativeUI();
+}
+
+function startNarrativeFlow() {
+  if (state.selectedTechnologies.size === 0) {
+    $("narrative-hint").classList.remove("hidden");
+    return;
+  }
+  $("narrative-hint").classList.add("hidden");
+  $("narrative-start-btn").classList.add("hidden");
+  $("narrative-question").classList.remove("hidden");
+}
+
+function runAtoNarrative(status) {
+  $("narrative-question").classList.add("hidden");
+  const control = controlById[state.selectedControlId];
+  const technologies = Array.from(state.selectedTechnologies);
+
+  const stigRuleIdsByTech = {};
+  const stigTechs = new Set(stigTechnologies());
+  for (const tech of technologies) {
+    if (stigTechs.has(tech)) {
+      stigRuleIdsByTech[tech] = stigRulesForControl(control.number, tech).map((r) => r.id);
+    }
+  }
+
+  $("narrative-text").value = generateAtoNarrativeText(control, technologies, status, stigRuleIdsByTech);
+  $("narrative-output").classList.remove("hidden");
+}
+
+function copyNarrativeToClipboard() {
+  navigator.clipboard.writeText($("narrative-text").value).then(() => {
+    const status = $("narrative-copy-status");
+    status.textContent = "Copied!";
+    setTimeout(() => { status.textContent = ""; }, 2000);
+  });
+}
+
 function init() {
   renderChips();
   renderList();
@@ -1220,6 +1430,12 @@ function init() {
   $("toggle-enh").addEventListener("change", (e) => { state.includeEnhancements = e.target.checked; renderList(); });
   $("back-btn").addEventListener("click", showList);
   $("generate-btn").addEventListener("click", runTailor);
+
+  $("narrative-start-btn").addEventListener("click", startNarrativeFlow);
+  $("narrative-met-btn").addEventListener("click", () => runAtoNarrative("met"));
+  $("narrative-not-met-btn").addEventListener("click", () => runAtoNarrative("not_met"));
+  $("narrative-copy-btn").addEventListener("click", copyNarrativeToClipboard);
+  $("narrative-restart-btn").addEventListener("click", resetNarrativeUI);
 }
 
 init();
